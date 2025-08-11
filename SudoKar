@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Sudoku — Kağıt & Kurşun Kalem</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f5f3ee; --pencil:#2b2b2b; --pencil-light:#555;
+    --ok:#2e7d32; --error:#b64b3a; --cell-size:clamp(32px,7.5vmin,56px);
+    --grid-thick:2.5px; --grid-thin:1px; --shadow:0 6px 20px rgba(0,0,0,.12);
+  }
+  *{box-sizing:border-box} html,body{height:100%}
+  body{
+    margin:0;color:var(--pencil);
+    background:
+      repeating-linear-gradient(0deg, rgba(0,0,0,.02) 0 1px, transparent 1px 32px),
+      radial-gradient(1000px 600px at 20% -10%, rgba(0,0,0,.05), transparent 40%),
+      var(--paper);
+    font-family:"Special Elite", Georgia, serif;
+    display:flex;align-items:center;justify-content:center;padding:24px;
+  }
+  .app{width:min(96vw,980px);display:grid;grid-template-columns:1fr auto;gap:20px;align-items:start}
+  header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between}
+  h1{margin:0;font-size:clamp(18px,2.6vw,26px);color:#222;text-shadow:.5px .5px rgba(0,0,0,.15)}
+  .panel{background:rgba(255,255,255,.6);border:1px solid rgba(0,0,0,.08);box-shadow:var(--shadow);padding:14px;border-radius:10px;backdrop-filter:blur(2px)}
+  .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  select,button{
+    appearance:none;border:1.2px solid #bbb4a8;background:linear-gradient(0deg,#fff,#f7f4ef);
+    padding:10px 12px;border-radius:8px;color:#2c2c2c;font:600 14px/1 "Special Elite", Georgia, serif;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.7), 0 2px 8px rgba(0,0,0,.08);cursor:pointer
+  }
+  .board-wrap{position:relative}
+  .board{display:grid;grid-template-columns:repeat(9,var(--cell-size));grid-template-rows:repeat(9,var(--cell-size));
+    border:var(--grid-thick) solid #403930;border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
+  .cell{
+    width:var(--cell-size);height:var(--cell-size);display:flex;align-items:center;justify-content:center;
+    font-size:calc(var(--cell-size)*.55);color:var(--pencil);outline:none;
+    background:
+      repeating-linear-gradient(0deg,#0000 0 34px, rgba(0,0,0,.02) 34px 35px),
+      linear-gradient(0deg,#f9f7f3,#f1eee8);
+    border-right:var(--grid-thin) solid #a89f93;border-bottom:var(--grid-thin) solid #a89f93;
+    text-shadow:.6px .6px rgba(0,0,0,.12);
+    caret-color:#222;  /* mobilde imleç görünür */
+  }
+  .cell[data-c="2"], .cell[data-c="5"]{ border-right:var(--grid-thick) solid #403930 }
+  .cell[data-r="2"], .cell[data-r="5"]{ border-bottom:var(--grid-thick) solid #403930 }
+  .given{ color:#111; filter:contrast(1.1) }
+  .selected{ background:linear-gradient(0deg,#f0ede7,#e9e5de); box-shadow:inset 0 0 0 1.5px rgba(0,0,0,.18) }
+  .same-val{ background:linear-gradient(0deg,#f6f3ee,#ece7de) }
+  .peer{ background:linear-gradient(0deg,#f7f4ef,#efebe4) }
+  .conflict{ background:#f5e4e1;color:#8e2f21;text-decoration:underline wavy rgba(182,75,58,.6) 1.5px }
+  .pencil{ font-size:calc(var(--cell-size)*.34); color:var(--pencil-light); display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); width:100%; height:100%; padding:4px }
+  .pencil span{display:flex;align-items:center;justify-content:center;opacity:.75}
+  .side{display:grid;gap:12px;width:min(280px,100%)}
+  .legend{font-size:13px;line-height:1.4;color:#3f3a34}
+  .status{font-weight:700;color:#3a352e}.ok{color:var(--ok)}.bad{color:var(--error)}
+  .footer{margin-top:10px;font-size:12px;color:#6a6257;opacity:.9}
+  @media (max-width:720px){.app{grid-template-columns:1fr}.side{order:2}.board-wrap{order:1;justify-self:center}}
+</style>
+</head>
+<body>
+  <div class="app">
+    <header class="panel">
+      <h1>Sudoku • Kağıt & Kurşun Kalem</h1>
+      <div class="controls">
+        <label for="difficulty" style="font-weight:700">Zorluk:</label>
+        <select id="difficulty">
+          <option value="veryeasy">Çok Kolay</option>
+          <option value="easy" selected>Kolay</option>
+          <option value="medium">Orta</option>
+          <option value="hard">Zor</option>
+        </select>
+        <button id="newGame">Yeni Oyun</button>
+        <button id="check">Kontrol</button>
+        <button id="solve">Çöz</button>
+        <button id="clear">Temizle</button>
+      </div>
+    </header>
+
+    <div class="board-wrap panel">
+      <div id="board" class="board" role="grid" aria-label="Sudoku tahtası"></div>
+      <div class="footer">İpucu: Hücreye dokun, klavye açılır. <b>0/Backspace</b> siler.</div>
+    </div>
+
+    <aside class="side">
+      <div class="panel legend">
+        <div class="status" id="status">Hazır 🎯</div>
+        <ul>
+          <li><b>Koyu</b> rakamlar: verili.</li>
+          <li><b>Kırmızı dalga</b>: çakışma.</li>
+          <li>Satır/sütun/kutu ve aynı sayı vurgulanır.</li>
+        </ul>
+      </div>
+      <div class="panel legend">
+        <b>Zorluk mantığı</b>
+        <div style="font-size:12px">Tam çözüm üretilir → ipuçları zorluğa göre kaldırılır → <em>tek çözümlü</em> doğrulanır.</div>
+      </div>
+    </aside>
+  </div>
+
+<script>
+/* ========= Sudoku Mantığı ========= */
+const SIZE=9, BOX=3;
+const DIFF_MAP={
+  veryeasy:{minClues:44,maxClues:52},
+  easy:{minClues:36,maxClues:43},
+  medium:{minClues:31,maxClues:35},
+  hard:{minClues:26,maxClues:30},
+};
+
+const boardEl=document.getElementById('board');
+const statusEl=document.getElementById('status');
+const selDifficulty=document.getElementById('difficulty');
+const btnNew=document.getElementById('newGame');
+const btnCheck=document.getElementById('check');
+const btnSolve=document.getElementById('solve');
+const btnClear=document.getElementById('clear');
+
+let puzzle=createEmpty(), solution=createEmpty();
+let givens=new Set(); // "r,c"
+let selected=null;
+
+function createEmpty(){return Array.from({length:SIZE},()=>Array(SIZE).fill(0));}
+function clone(m){return m.map(r=>r.slice());}
+function key(r,c){return `${r},${c}`;}
+function inRow(g,r,n){return g[r].includes(n);}
+function inCol(g,c,n){for(let r=0;r<SIZE;r++) if(g[r][c]===n) return true; return false;}
+function inBox(g,r,c,n){const br=Math.floor(r/BOX)*BOX, bc=Math.floor(c/BOX)*BOX; for(let rr=0;rr<BOX;rr++) for(let cc=0;cc<BOX;cc++) if(g[br+rr][bc+cc]===n) return true; return false;}
+function valid(g,r,c,n){return !inRow(g,r,n)&&!inCol(g,c,n)&&!inBox(g,r,c,n);}
+
+function solveGrid(grid){
+  const g=clone(grid);
+  function next(){for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) if(g[r][c]===0) return [r,c]; return null;}
+  function bt(){
+    const spot=next(); if(!spot) return true;
+    const [r,c]=spot;
+    const nums=[1,2,3,4,5,6,7,8,9].sort(()=>Math.random()-.5);
+    for(const n of nums){ if(valid(g,r,c,n)){ g[r][c]=n; if(bt()) return true; g[r][c]=0; } }
+    return false;
+  }
+  return bt()?g:null;
+}
+function countSolutions(grid,limit=2){
+  let count=0; const g=clone(grid);
+  function next(){for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) if(g[r][c]===0) return [r,c]; return null;}
+  function bt(){
+    if(count>=limit) return;
+    const spot=next(); if(!spot){count++;return;}
+    const [r,c]=spot;
+    for(let n=1;n<=9;n++){ if(valid(g,r,c,n)){ g[r][c]=n; bt(); g[r][c]=0; if(count>=limit) return; } }
+  }
+  bt(); return count;
+}
+function generateFull(){
+  const grid=createEmpty();
+  grid[0]=[1,2,3,4,5,6,7,8,9].sort(()=>Math.random()-.5);
+  const solved=solveGrid(grid);
+  return shuffleGrid(solved);
+}
+function shuffleGrid(g){
+  const grid=clone(g);
+  for(let band=0; band<3; band++){const r1=band*3+(Math.random()*3|0), r2=band*3+(Math.random()*3|0); [grid[r1],grid[r2]]=[grid[r2],grid[r1]];}
+  for(let stack=0; stack<3; stack++){const c1=stack*3+(Math.random()*3|0), c2=stack*3+(Math.random()*3|0); for(let r=0;r<SIZE;r++) [grid[r][c1],grid[r][c2]]=[grid[r][c2],grid[r][c1]];}
+  const b1=(Math.random()*3|0), b2=(Math.random()*3|0); for(let k=0;k<3;k++) [grid[b1*3+k],grid[b2*3+k]]=[grid[b2*3+k],grid[b1*3+k]];
+  const s1=(Math.random()*3|0), s2=(Math.random()*3|0); for(let r=0;r<SIZE;r++) for(let k=0;k<3;k++){const c1=s1*3+k,c2=s2*3+k; [grid[r][c1],grid[r][c2]]=[grid[r][c2],grid[r][c1]];}
+  return grid;
+}
+function generatePuzzle(diffKey){
+  const {minClues,maxClues}=DIFF_MAP[diffKey]||DIFF_MAP.easy;
+  const full=generateFull(); let grid=clone(full);
+  const cells=[]; for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) cells.push([r,c]);
+  cells.sort(()=>Math.random()-.5);
+  const target=randInt(minClues,maxClues);
+  for(const [r,c] of cells){
+    const backup=grid[r][c]; grid[r][c]=0;
+    const filled=countFilled(grid);
+    if(countSolutions(grid,2)!==1 || filled<target) grid[r][c]=backup;
+  }
+  return {puzzle:grid, solution:full};
+}
+function randInt(a,b){return a + (Math.random()*((b-a)+1)|0);}
+function countFilled(g){let n=0; for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) if(g[r][c]!==0) n++; return n;}
+
+/* ========= UI ========= */
+function buildBoard(){
+  boardEl.innerHTML='';
+  for(let r=0;r<SIZE;r++){
+    for(let c=0;c<SIZE;c++){
+      const cell=document.createElement('div');
+      cell.className='cell';
+      cell.dataset.r=r; cell.dataset.c=c;
+      if(c===2 || c===5) cell.setAttribute('data-c', c);
+      if(r===2 || r===5) cell.setAttribute('data-r', r);
+
+      // Klavye garantisi: contenteditable + inputmode=numeric
+      cell.contentEditable = "true";           // verili hücrelerde sonradan kapatacağız
+      cell.setAttribute('inputmode','numeric');
+      cell.setAttribute('enterkeyhint','done');
+      cell.setAttribute('autocapitalize','off');
+      cell.setAttribute('autocomplete','off');
+      cell.setAttribute('autocorrect','off');
+
+      // Focus/tık seçimi
+      cell.addEventListener('pointerdown', ()=>selectCell(cell));
+      cell.addEventListener('focus', ()=>selectCell(cell));
+
+      // Masaüstü yön tuşları
+      cell.addEventListener('keydown', handleKey);
+      boardEl.appendChild(cell);
+    }
+  }
+
+  // Contenteditable girişini tek karaktere indir ve filtrele
+  boardEl.addEventListener('beforeinput', (e)=>{
+    const cell = e.target.closest('.cell');
+    if(!cell) return;
+    if(!selected) selected = cell;
+
+    const r=+cell.dataset.r, c=+cell.dataset.c;
+    if(givens.has(key(r,c))){
+      e.preventDefault();
+      return;
+    }
+
+    if(e.inputType === 'insertText'){
+      const ch = (e.data||'').trim();
+      if(!/^[0-9]$/.test(ch)){ e.preventDefault(); return; }
+      e.preventDefault();
+      if(ch === '0'){ puzzle[r][c]=0; }
+      else { puzzle[r][c]=+ch; }
+      draw(); highlight(cell);
+      // caret'i temiz göster: contenteditable içeriğini bir rakama sabitliyoruz
+      cell.textContent = puzzle[r][c] ? String(puzzle[r][c]) : '';
+      placeCaretAtEnd(cell);
+    } else if(e.inputType === 'deleteContentBackward' || e.inputType === 'deleteContentForward'){
+      e.preventDefault(); puzzle[r][c]=0; draw(); highlight(cell); cell.textContent='';
+    } else if(e.inputType === 'insertParagraph'){
+      e.preventDefault(); // enter engel
+    }
+  });
+
+  // Focuslandığında caret'in saçmalamasını önle
+  boardEl.addEventListener('focusin',(e)=>{
+    const cell=e.target.closest('.cell'); if(!cell) return;
+    placeCaretAtEnd(cell);
+  });
+}
+function placeCaretAtEnd(el){
+  const r=document.createRange(); const s=window.getSelection();
+  r.selectNodeContents(el); r.collapse(false); s.removeAllRanges(); s.addRange(r);
+}
+
+function draw(){
+  for(const cell of boardEl.children){
+    const r=+cell.dataset.r, c=+cell.dataset.c, v=puzzle[r][c];
+    cell.classList.remove('given','selected','peer','same-val','conflict');
+    // verili/girme izni
+    const isGiven = givens.has(key(r,c));
+    cell.contentEditable = isGiven ? "false" : "true";
+    if(isGiven) cell.classList.add('given');
+
+    // içerik
+    if(v){ cell.textContent = v; }
+    else{
+      cell.textContent = '';
+      const wrap=document.createElement('div'); wrap.className='pencil';
+      for(let n=1;n<=9;n++){
+        const s=document.createElement('span'); s.textContent = valid(puzzle,r,c,n)? n : '';
+        wrap.appendChild(s);
+      }
+      cell.appendChild(wrap);
+    }
+  }
+  if(selected) highlight(selected);
+}
+function highlight(el){
+  for(const x of boardEl.children) x.classList.remove('selected','peer','same-val','conflict');
+  el.classList.add('selected');
+  const r=+el.dataset.r, c=+el.dataset.c, val=puzzle[r][c];
+  for(const x of boardEl.children){
+    const rr=+x.dataset.r, cc=+x.dataset.c;
+    if(rr===r || cc===c || (Math.floor(rr/3)===Math.floor(r/3)&&Math.floor(cc/3)===Math.floor(c/3))) x.classList.add('peer');
+  }
+  if(val){
+    for(const x of boardEl.children){ const rr=+x.dataset.r, cc=+x.dataset.c; if(puzzle[rr][cc]===val) x.classList.add('same-val'); }
+    if(!isCellLegal(puzzle,r,c,val)) el.classList.add('conflict');
+  }
+}
+function isCellLegal(grid,r,c,n){
+  for(let cc=0; cc<SIZE; cc++) if(cc!==c && grid[r][cc]===n) return false;
+  for(let rr=0; rr<SIZE; rr++) if(rr!==r && grid[rr][c]===n) return false;
+  const br=Math.floor(r/3)*3, bc=Math.floor(c/3)*3;
+  for(let rr=0; rr<3; rr++) for(let cc=0; cc<3; cc++){
+    const R=br+rr, C=bc+cc;
+    if(!(R===r && C===c) && grid[R][C]===n) return false;
+  }
+  return true;
+}
+
+/* Etkileşim */
+function selectCell(el){ selected=el; highlight(el); }
+function handleKey(e){
+  // yön tuşları/0–9/backspace çalışsın (masaüstü)
+  if(!selected) return;
+  const r=+selected.dataset.r, c=+selected.dataset.c;
+  if(givens.has(key(r,c))) return;
+
+  if(e.key>='1'&&e.key<='9'){
+    puzzle[r][c]=+e.key; draw(); highlight(selected); e.preventDefault(); return;
+  }
+  if(e.key==='Backspace'||e.key==='Delete'||e.key==='0'){
+    puzzle[r][c]=0; draw(); highlight(selected); e.preventDefault(); return;
+  }
+  const move={ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]}[e.key];
+  if(move){
+    const [dr,dc]=move, nr=Math.max(0,Math.min(8,r+dr)), nc=Math.max(0,Math.min(8,c+dc));
+    const next=[...boardEl.children].find(x=>+x.dataset.r===nr && +x.dataset.c===nc);
+    if(next){ next.focus(); selectCell(next); }
+    e.preventDefault();
+  }
+}
+
+/* Butonlar */
+btnNew.addEventListener('click', newGame);
+btnSolve.addEventListener('click', ()=>{ puzzle=clone(solution); draw(); status('Bulmaca çözüldü. ✔️',true); });
+btnCheck.addEventListener('click', ()=>{
+  let ok=true, wrong=0;
+  for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++){
+    if(puzzle[r][c]!==0 && puzzle[r][c]!==solution[r][c]){ ok=false; wrong++; }
+  }
+  if(ok && equalGrids(puzzle,solution)) status('Mükemmel! 🎉 Tamamladın.',true);
+  else if(ok) status('Şu an hata yok. Devam! ✏️',true);
+  else status(`Oops! ${wrong} hücre yanlış. 🔍`,false);
+});
+btnClear.addEventListener('click', ()=>{
+  for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) if(!givens.has(key(r,c))) puzzle[r][c]=0;
+  draw(); status('Girilenler temizlendi.',true);
+});
+function status(msg,good=true){ statusEl.textContent=msg; statusEl.classList.toggle('ok',good); statusEl.classList.toggle('bad',!good); }
+function equalGrids(a,b){ for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) if(a[r][c]!==b[r][c]) return false; return true; }
+
+/* Oyun başlat */
+function newGame(){
+  status('Yeni bulmaca üretiliyor…',true);
+  const diff=selDifficulty.value;
+  const {puzzle:pu, solution:sol}=generatePuzzle(diff);
+  puzzle=pu; solution=sol; givens.clear();
+  for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) if(puzzle[r][c]!==0) givens.add(key(r,c));
+  buildBoard(); draw();
+  const mid=[...boardEl.children].find(x=>+x.dataset.r===4 && +x.dataset.c===4);
+  if(mid){ mid.focus(); selectCell(mid); }
+  status(`Zorluk: ${labelOf(diff)} • İpucu: ${countFilled(puzzle)}`,true);
+}
+function labelOf(k){ return {veryeasy:'Çok Kolay', easy:'Kolay', medium:'Orta', hard:'Zor'}[k]||k; }
+
+buildBoard(); newGame();
+</script>
+</body>
+</html>
